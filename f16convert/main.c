@@ -115,7 +115,7 @@ float16 f32_to_f16( float in ) {
 #if 0
     printf("%u %u %u %u\n", f32_bias, f16_bias, e_f32, (f32_bias - f16_bias) - e_f32 + 1 );
 #endif
-    fixup = (m >> 13) & 0x1;
+    fixup = (m >> 12) & 0x1;
     m = m + 0x000000fff + fixup;
     m = m >> 12;
     e = 0x0;
@@ -161,8 +161,10 @@ void print_f16_f32_v2( float16 f16, float f32, int i ) {
   unsigned int e_f32 = ( hybrid.u & 0x7f800000 ) >> 23;
   unsigned int m_f32 = ( hybrid.u & 0x007fffff );
 
+#if 0
   if ( e_f16 != 0 )
-  printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
+#endif
+    printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
 }
 
 int main( int argc, char* argv[] ) {
@@ -211,7 +213,7 @@ int main( int argc, char* argv[] ) {
     if ( f16_a != f16_b ) {
       print_f16_f32_v2( f16_a, hybrid.f, 0 );
       print_f16_f32_v2( f16_b, hybrid.f, 1 );
-#if 0
+#if 1
       break;
 #endif
     }
@@ -227,12 +229,9 @@ int main( int argc, char* argv[] ) {
     if ( f16_a != f16_b ) {
       print_f16_f32_v2( f16_a, hybrid.f, 0 );
       print_f16_f32_v2( f16_b, hybrid.f, 1 );
-#if 0
-      break;
-#endif
     }
   }
-   printf("...done\n\n");
+  printf("...done\n\n");
 
   /* test all f16 -> f32 values */
   printf("testing F16 - > F32\n");
