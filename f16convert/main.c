@@ -110,15 +110,20 @@ float16 f32_to_f16( float in ) {
     m = 0x0;
   /* denormal */
   } else if ( e_f32 <= f32_bias - f16_bias ) {
-    /* RNE round */
-    m = m_f32 >> ( (f32_bias - f16_bias) - e_f32 + 1 ); /* denormalizd mantissa */
-#if 0
-    printf("%u %u %u %u\n", f32_bias, f16_bias, e_f32, (f32_bias - f16_bias) - e_f32 + 1 );
-#endif
-    fixup = (m >> 12) & 0x1;
-    m = m + 0x000000fff + fixup;
-    m = m >> 12;
+#if 1
+    fixup = m_f32 >> 12;
+    fixup |= 0x0800;
+    fixup = ((fixup >> ((f32_bias - f16_bias) + 1 - e_f32)) & 0x1);
+    m = m_f32 >> 13;
+    m |= 0x0400;
+    m = (m >> ((f32_bias - f16_bias) + 1 - e_f32)) + fixup;
     e = 0x0;
+#else
+    m = m_f32 >> 12;
+    m |= 0x0800;
+    m = (m >> ((f32_bias - f16_bias) + 2 - e_f32)) + ((m >> ((f32_bias - f16_bias) + 1 - e_f32)) & 1) ;
+    e = 0x0;
+#endif
   /* normal */
   } else {
     /* RNE round */
@@ -190,7 +195,7 @@ int main( int argc, char* argv[] ) {
 #if 0
   {
     float_uint hybrid;
-    hybrid.u = 0xb87feff3;
+    hybrid.u = 0x362750c2;
     x_f16 = _cvtss_sh( hybrid.f,  _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
     print_f16_f32_v2( x_f16, hybrid.f, 0 );
     x_f16 = f32_to_f16( hybrid.f );
@@ -213,9 +218,7 @@ int main( int argc, char* argv[] ) {
     if ( f16_a != f16_b ) {
       print_f16_f32_v2( f16_a, hybrid.f, 0 );
       print_f16_f32_v2( f16_b, hybrid.f, 1 );
-#if 1
       break;
-#endif
     }
   }
   {
