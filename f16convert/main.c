@@ -81,22 +81,56 @@ float f16_to_f32( float16 in ) {
 }
 
 float16 f32_to_f16( float in ) {
-#if 0
   unsigned int f32_bias = 127;
   unsigned int f16_bias = 15;
   float_uint hybrid_in;
   float16 res = 0;
   unsigned int s, e, m;
-  
+  unsigned int fixup;
+
   hybrid_in.f = in;
+
   s = ( hybrid_in.u & 0x80000000 ) >> 16;
   e = ( hybrid_in.u & 0x7f800000 ) >> 23;
-  m = ( hybrid_in.u & 0x007fffff );
+  m = ( e == 0 ) ? 0 : ( hybrid_in.u & 0x007fffff ); /* DAZ */
+
+  /* RNE round */
+  fixup = (m >> 13) & 0x1;
+  m = m + 0x00000fff + fixup;
+
+  /* special value */
+  if ( e == 0xff ) {
+    e = 0x7c00;
+    m = m >> 13;
+  /* overflow */
+  } else if ( e > (f32_bias + 1 + f16_bias) ) {
+    s = 0x0;
+    e = 0x7c00;
+    m = 0x03ff;
+  /* smaller than denormal f16 */
+  } else if ( e < f32_bias - f16_bias - 9 ) {
+    s = 0x0;
+    e = 0x0;
+    m = 0x0;
+  /* denormal */
+  } else if ( e < f32_bias - f16_bias ) {
+    e = 0x0;
+    m = m >> ( ( (f32_bias - f16_bias) - e ) + 13 );
+  /* normal */
+  } else {
+    e -= (f32_bias - f16_bias);
+    m = m >> 13;
+  }
+
+  /* set result to 0 */
+  res = 0x0;
+  /* set exp and mant */
+  res |= e << 10;
+  res |= m;
+  /* sign it */
+  res |= s;
 
   return res;
-#else
-  return 0;
-#endif
 }
 
 void print_f16_f32( float16 f16, float f32 ) {
@@ -112,10 +146,7 @@ void print_f16_f32( float16 f16, float f32 ) {
 
 int main( int argc, char* argv[] ) {
   float x_f32;
-  /*float x_f32_cvt;*/
-  float x_f32_cvt_gold;
-  /*float16 x_f16;*/
-  float16 x_f16_gold;
+  float16 x_f16;
   float_uint hybrid_b;
   float_uint hybrid_a;
   int i;
@@ -124,47 +155,50 @@ int main( int argc, char* argv[] ) {
 
   /* testing random numbers */
   x_f32 = (float)drand48();
-  hybrid_b.f = x_f32;
-  x_f16_gold = _cvtss_sh( x_f32, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
-  x_f32_cvt_gold = _cvtsh_ss( x_f16_gold );
-  hybrid_a.f = x_f32_cvt_gold;
-  printf( "%f, %f, 0x%x, 0x%x, 0x%x\n", x_f32, x_f32_cvt_gold, hybrid_b.u, x_f16_gold, hybrid_a.u );
+
+  printf("using _cvtss_sh for random f32 value\n");
+  x_f16 = _cvtss_sh( x_f32, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
+  print_f16_f32( x_f16, x_f32 );
+
+  printf("using f32_to_f16 for random f32 value\n");
+  x_f16 = f32_to_f16( x_f32 );
+  print_f16_f32( x_f16, x_f32 );
   printf("\n");
 
   /* test denormal f16 */
   printf("using _cvtsh_ss for 0x1 to 0x200 mantiss\n");
-  x_f16_gold = 0x0001;
+  x_f16 = 0x0001;
   for ( i = 0; i < 10; i++ ) { 
-    x_f32_cvt_gold = _cvtsh_ss( x_f16_gold );
-    print_f16_f32( x_f16_gold, x_f32_cvt_gold );
-    x_f16_gold = x_f16_gold << 1;
+    x_f32 = _cvtsh_ss( x_f16 );
+    print_f16_f32( x_f16, x_f32 );
+    x_f16 = x_f16 << 1;
   }
   printf("\n");
 
   printf("using f16_to_f32 for 0x1 to 0x200 mantiss\n");
-  x_f16_gold = 0x0001;
+  x_f16 = 0x0001;
   for ( i = 0; i < 10; i++ ) { 
-    x_f32_cvt_gold = f16_to_f32( x_f16_gold );
-    print_f16_f32( x_f16_gold, x_f32_cvt_gold );
-    x_f16_gold = x_f16_gold << 1;
+    x_f32 = f16_to_f32( x_f16 );
+    print_f16_f32( x_f16, x_f32 );
+    x_f16 = x_f16 << 1;
   }
   printf("\n");
 
   printf("using _cvtsh_ss for 0x1 to 0x3ff mantiss\n");
-  x_f16_gold = 0x3ff;
+  x_f16 = 0x3ff;
   for ( i = 0; i < 10; i++ ) { 
-    x_f32_cvt_gold = _cvtsh_ss( x_f16_gold );
-    print_f16_f32( x_f16_gold, x_f32_cvt_gold );
-    x_f16_gold = x_f16_gold >> 1;
+    x_f32 = _cvtsh_ss( x_f16 );
+    print_f16_f32( x_f16, x_f32 );
+    x_f16 = x_f16 >> 1;
   }
   printf("\n");
 
   printf("using f16_to_f32 for 0x1 to 0x3ff mantiss\n");
-  x_f16_gold = 0x3ff;
+  x_f16 = 0x3ff;
   for ( i = 0; i < 10; i++ ) { 
-    x_f32_cvt_gold = f16_to_f32( x_f16_gold );
-    print_f16_f32( x_f16_gold, x_f32_cvt_gold );
-    x_f16_gold = x_f16_gold >> 1;
+    x_f32 = f16_to_f32( x_f16 );
+    print_f16_f32( x_f16, x_f32 );
+    x_f16 = x_f16 >> 1;
   }
   printf("\n");
 
