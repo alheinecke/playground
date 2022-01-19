@@ -85,37 +85,39 @@ float16 f32_to_f16( float in ) {
   unsigned int f16_bias = 15;
   float_uint hybrid_in;
   float16 res = 0;
-  unsigned int s, e, m;
+  unsigned int s, e, m, e_f32, m_f32;
   unsigned int fixup;
-
   hybrid_in.f = in;
 
+  /* DAZ */
+  hybrid_in.u = ( (hybrid_in.u & 0x7f800000) == 0x0 ) ? ( hybrid_in.u & 0x80000000 ) : ( hybrid_in.u & 0xffffffff );
+
   s = ( hybrid_in.u & 0x80000000 ) >> 16;
-  e = ( hybrid_in.u & 0x7f800000 ) >> 23;
-  m = ( e == 0 ) ? 0 : ( hybrid_in.u & 0x007fffff ); /* DAZ */
+  e_f32 = ( hybrid_in.u & 0x7f800000 ) >> 23;
+  m_f32 = ( hybrid_in.u & 0x007fffff );
 
   /* RNE round */
-  fixup = (m >> 13) & 0x1;
-  m = m + 0x00000fff + fixup;
+  fixup = (m_f32 >> 13) & 0x1;
+  hybrid_in.u = hybrid_in.u + 0x000000fff + fixup;
+  e = ( hybrid_in.u & 0x7f800000 ) >> 23;
+  m = ( hybrid_in.u & 0x007fffff );
 
   /* special value */
-  if ( e == 0xff ) {
-    e = 0x7c00;
-    m = m >> 13;
+  if ( e_f32 == 0xff ) {
+    e = 0x1f;
+    m = (m_f32 == 0) ? 0 : (m_f32 >> 13) | 0x200;
   /* overflow */
-  } else if ( e > (f32_bias + 1 + f16_bias) ) {
-    s = 0x0;
-    e = 0x7c00;
-    m = 0x03ff;
+  } else if ( e_f32 > (f32_bias + f16_bias) ) {
+    e = 0x1f;
+    m = 0x0;
   /* smaller than denormal f16 */
-  } else if ( e < f32_bias - f16_bias - 9 ) {
-    s = 0x0;
+  } else if ( e_f32 < f32_bias - f16_bias - 10 ) {
     e = 0x0;
     m = 0x0;
   /* denormal */
-  } else if ( e < f32_bias - f16_bias ) {
-    e = 0x0;
+  } else if ( e_f32 < f32_bias - f16_bias ) {
     m = m >> ( ( (f32_bias - f16_bias) - e ) + 13 );
+    e = 0x0;
   /* normal */
   } else {
     e -= (f32_bias - f16_bias);
@@ -137,19 +139,30 @@ void print_f16_f32( float16 f16, float f32 ) {
   float_uint hybrid; 
   hybrid.f= f32;
   unsigned int e_f16 = ( f16 & 0x7c00 ) >> 10;
-  unsigned int m_f16 = ( f16 & 0x03ff ) << 13;
+  unsigned int m_f16 = ( f16 & 0x03ff );
   unsigned int e_f32 = ( hybrid.u & 0x7f800000 ) >> 23;
   unsigned int m_f32 = ( hybrid.u & 0x007fffff );
-  
+
   printf( "fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
+}
+
+void print_f16_f32_v2( float16 f16, float f32, int i ) {
+  float_uint hybrid; 
+  hybrid.f= f32;
+  unsigned int e_f16 = ( f16 & 0x7c00 ) >> 10;
+  unsigned int m_f16 = ( f16 & 0x03ff );
+  unsigned int e_f32 = ( hybrid.u & 0x7f800000 ) >> 23;
+  unsigned int m_f32 = ( hybrid.u & 0x007fffff );
+
+  if ( e_f16 != 0 ) {  
+    printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
+  }
 }
 
 int main( int argc, char* argv[] ) {
   float x_f32;
   float16 x_f16;
-  float_uint hybrid_b;
-  float_uint hybrid_a;
-  int i;
+  unsigned int i;
 
   srand48( clock() );
 
@@ -164,6 +177,37 @@ int main( int argc, char* argv[] ) {
   x_f16 = f32_to_f16( x_f32 );
   print_f16_f32( x_f16, x_f32 );
   printf("\n");
+
+#if 0
+  {
+    float_uint hybrid;
+    hybrid.u = 0xb87feff3;
+    x_f16 = _cvtss_sh( hybrid.f,  _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
+    print_f16_f32_v2( x_f16, hybrid.f, 0 );
+    x_f16 = f32_to_f16( hybrid.f );
+    print_f16_f32_v2( x_f16, hybrid.f, 1 );
+    printf("\n");
+  }
+  return 0;
+#endif
+
+  printf("testing all 2^32-1 combinations...\n");
+  for ( i = 0; i < 0xffffffff; ++i ) {
+    float_uint hybrid;
+    float16 f16_a;
+    float16 f16_b;
+
+    hybrid.u = i;
+    f16_a = _cvtss_sh( hybrid.f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
+    f16_b = f32_to_f16( hybrid.f );
+    if ( f16_a != f16_b ) {
+      print_f16_f32_v2( f16_a, hybrid.f, 0 );
+      print_f16_f32_v2( f16_b, hybrid.f, 1 );
+#if 0
+      break;
+#endif
+    }
+  }
 
   /* test denormal f16 */
   printf("using _cvtsh_ss for 0x1 to 0x200 mantiss\n");
@@ -202,8 +246,11 @@ int main( int argc, char* argv[] ) {
   }
   printf("\n");
 
+  /* test all f16 -> f32 values */
   printf("testing all 65535 combinations...\n");
   for ( i = 0; i < 0x10000; ++i ) {
+    float_uint hybrid_b;
+    float_uint hybrid_a;
     hybrid_a.f = _cvtsh_ss( (float16)i );;
     hybrid_b.f = f16_to_f32( (float16)i );;
     if ( hybrid_a.u != hybrid_b.u ) {
