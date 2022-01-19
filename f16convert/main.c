@@ -96,12 +96,6 @@ float16 f32_to_f16( float in ) {
   e_f32 = ( hybrid_in.u & 0x7f800000 ) >> 23;
   m_f32 = ( hybrid_in.u & 0x007fffff );
 
-  /* RNE round */
-  fixup = (m_f32 >> 13) & 0x1;
-  hybrid_in.u = hybrid_in.u + 0x000000fff + fixup;
-  e = ( hybrid_in.u & 0x7f800000 ) >> 23;
-  m = ( hybrid_in.u & 0x007fffff );
-
   /* special value */
   if ( e_f32 == 0xff ) {
     e = 0x1f;
@@ -115,11 +109,24 @@ float16 f32_to_f16( float in ) {
     e = 0x0;
     m = 0x0;
   /* denormal */
-  } else if ( e_f32 < f32_bias - f16_bias ) {
-    m = m >> ( ( (f32_bias - f16_bias) - e ) + 13 );
+  } else if ( e_f32 <= f32_bias - f16_bias ) {
+    /* RNE round */
+    m = m_f32 >> ( (f32_bias - f16_bias) - e_f32 + 1 ); /* denormalizd mantissa */
+#if 0
+    printf("%u %u %u %u\n", f32_bias, f16_bias, e_f32, (f32_bias - f16_bias) - e_f32 + 1 );
+#endif
+    fixup = (m >> 13) & 0x1;
+    m = m + 0x000000fff + fixup;
+    m = m >> 12;
     e = 0x0;
   /* normal */
   } else {
+    /* RNE round */
+    fixup = (m_f32 >> 13) & 0x1;
+    hybrid_in.u = hybrid_in.u + 0x000000fff + fixup;
+    e = ( hybrid_in.u & 0x7f800000 ) >> 23;
+    m = ( hybrid_in.u & 0x007fffff );
+
     e -= (f32_bias - f16_bias);
     m = m >> 13;
   }
@@ -154,9 +161,8 @@ void print_f16_f32_v2( float16 f16, float f32, int i ) {
   unsigned int e_f32 = ( hybrid.u & 0x7f800000 ) >> 23;
   unsigned int m_f32 = ( hybrid.u & 0x007fffff );
 
-  if ( e_f16 != 0 ) {  
-    printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
-  }
+  if ( e_f16 != 0 )
+  printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
 }
 
 int main( int argc, char* argv[] ) {
@@ -169,6 +175,7 @@ int main( int argc, char* argv[] ) {
   /* testing random numbers */
   x_f32 = (float)drand48();
 
+  printf("\ntesting F32 - > F16 for a random scalar [0:1]\n");
   printf("using _cvtss_sh for random f32 value\n");
   x_f16 = _cvtss_sh( x_f32, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
   print_f16_f32( x_f16, x_f32 );
@@ -191,6 +198,7 @@ int main( int argc, char* argv[] ) {
   return 0;
 #endif
 
+  printf("testing F32 - > F16\n");
   printf("testing all 2^32-1 combinations...\n");
   for ( i = 0; i < 0xffffffff; ++i ) {
     float_uint hybrid;
@@ -208,45 +216,26 @@ int main( int argc, char* argv[] ) {
 #endif
     }
   }
-
-  /* test denormal f16 */
-  printf("using _cvtsh_ss for 0x1 to 0x200 mantiss\n");
-  x_f16 = 0x0001;
-  for ( i = 0; i < 10; i++ ) { 
-    x_f32 = _cvtsh_ss( x_f16 );
-    print_f16_f32( x_f16, x_f32 );
-    x_f16 = x_f16 << 1;
+  {
+    float_uint hybrid;
+    float16 f16_a;
+    float16 f16_b;
+    i = 0xffffffff;
+    hybrid.u = i;
+    f16_a = _cvtss_sh( hybrid.f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
+    f16_b = f32_to_f16( hybrid.f );
+    if ( f16_a != f16_b ) {
+      print_f16_f32_v2( f16_a, hybrid.f, 0 );
+      print_f16_f32_v2( f16_b, hybrid.f, 1 );
+#if 0
+      break;
+#endif
+    }
   }
-  printf("\n");
-
-  printf("using f16_to_f32 for 0x1 to 0x200 mantiss\n");
-  x_f16 = 0x0001;
-  for ( i = 0; i < 10; i++ ) { 
-    x_f32 = f16_to_f32( x_f16 );
-    print_f16_f32( x_f16, x_f32 );
-    x_f16 = x_f16 << 1;
-  }
-  printf("\n");
-
-  printf("using _cvtsh_ss for 0x1 to 0x3ff mantiss\n");
-  x_f16 = 0x3ff;
-  for ( i = 0; i < 10; i++ ) { 
-    x_f32 = _cvtsh_ss( x_f16 );
-    print_f16_f32( x_f16, x_f32 );
-    x_f16 = x_f16 >> 1;
-  }
-  printf("\n");
-
-  printf("using f16_to_f32 for 0x1 to 0x3ff mantiss\n");
-  x_f16 = 0x3ff;
-  for ( i = 0; i < 10; i++ ) { 
-    x_f32 = f16_to_f32( x_f16 );
-    print_f16_f32( x_f16, x_f32 );
-    x_f16 = x_f16 >> 1;
-  }
-  printf("\n");
+   printf("...done\n\n");
 
   /* test all f16 -> f32 values */
+  printf("testing F16 - > F32\n");
   printf("testing all 65535 combinations...\n");
   for ( i = 0; i < 0x10000; ++i ) {
     float_uint hybrid_b;
@@ -257,7 +246,7 @@ int main( int argc, char* argv[] ) {
       printf("error for input 0x%x: 0x%x vs. 0x%x\n", i, hybrid_a.u, hybrid_b.u);
     }
   }
-  printf("...done\n");
+  printf("...done\n\n");
 
   return 0;
 }
