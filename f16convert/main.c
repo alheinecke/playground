@@ -110,30 +110,41 @@ float16 f32_to_f16( float in ) {
     m = 0x0;
   /* denormal */
   } else if ( e_f32 <= f32_bias - f16_bias ) {
+    /* RNE */
 #if 1
-    fixup = m_f32 >> 12;
-    fixup |= 0x0800;
-    fixup = ((fixup >> ((f32_bias - f16_bias) + 1 - e_f32)) & 0x1);
-    m = m_f32 >> 13;
-    m |= 0x0400;
-    m = (m >> ((f32_bias - f16_bias) + 1 - e_f32)) + fixup;
+    /* denormalized mantissa */
+    m = m_f32 | 0x00800000;
+    /* addtionally subnormal shift */
+    m = m >> ((f32_bias - f16_bias) + 1 - e_f32);
+    /* RNE Round */
+    fixup = (m >> 13) & 0x1;
+    m = m + 0x000000fff + fixup;
+    m = m >> 13;
     e = 0x0;
 #else
-    m = m_f32 >> 12;
-    m |= 0x0800;
+    /* RAZ */
+    m = (m_f32 | 0x00800000) >> 12;
     m = (m >> ((f32_bias - f16_bias) + 2 - e_f32)) + ((m >> ((f32_bias - f16_bias) + 1 - e_f32)) & 1) ;
     e = 0x0;
 #endif
   /* normal */
   } else {
+#if 1
     /* RNE round */
     fixup = (m_f32 >> 13) & 0x1;
     hybrid_in.u = hybrid_in.u + 0x000000fff + fixup;
     e = ( hybrid_in.u & 0x7f800000 ) >> 23;
     m = ( hybrid_in.u & 0x007fffff );
-
     e -= (f32_bias - f16_bias);
     m = m >> 13;
+#else
+    /* RAZ */
+    hybrid_in.u = hybrid_in.u + 0x00001000;
+    e = ( hybrid_in.u & 0x7f800000 ) >> 23;
+    m = ( hybrid_in.u & 0x007fffff );
+    e -= (f32_bias - f16_bias);
+    m = m >> 13;
+#endif
   }
 
   /* set result to 0 */
@@ -182,7 +193,7 @@ int main( int argc, char* argv[] ) {
   /* testing random numbers */
   x_f32 = (float)drand48();
 
-  printf("\ntesting F32 - > F16 for a random scalar [0:1]\n");
+  printf("\ntesting F32 -> F16 for a random scalar [0:1]\n");
   printf("using _cvtss_sh for random f32 value\n");
   x_f16 = _cvtss_sh( x_f32, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
   print_f16_f32( x_f16, x_f32 );
@@ -195,8 +206,8 @@ int main( int argc, char* argv[] ) {
 #if 0
   {
     float_uint hybrid;
-    hybrid.u = 0x362750c2;
-    x_f16 = _cvtss_sh( hybrid.f,  _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
+    hybrid.u = 0x33000000;
+    x_f16 = _cvtss_sh( hybrid.f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
     print_f16_f32_v2( x_f16, hybrid.f, 0 );
     x_f16 = f32_to_f16( hybrid.f );
     print_f16_f32_v2( x_f16, hybrid.f, 1 );
@@ -205,7 +216,7 @@ int main( int argc, char* argv[] ) {
   return 0;
 #endif
 
-  printf("testing F32 - > F16\n");
+  printf("testing F32 -> F16\n");
   printf("testing all 2^32-1 combinations...\n");
   for ( i = 0; i < 0xffffffff; ++i ) {
     float_uint hybrid;
@@ -218,7 +229,9 @@ int main( int argc, char* argv[] ) {
     if ( f16_a != f16_b ) {
       print_f16_f32_v2( f16_a, hybrid.f, 0 );
       print_f16_f32_v2( f16_b, hybrid.f, 1 );
+#if 0
       break;
+#endif
     }
   }
   {
@@ -237,7 +250,7 @@ int main( int argc, char* argv[] ) {
   printf("...done\n\n");
 
   /* test all f16 -> f32 values */
-  printf("testing F16 - > F32\n");
+  printf("testing F16 -> F32\n");
   printf("testing all 65535 combinations...\n");
   for ( i = 0; i < 0x10000; ++i ) {
     float_uint hybrid_b;
