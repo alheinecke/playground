@@ -160,7 +160,7 @@ float16 f32_to_f16( float in ) {
   return res;
 }
 
-void print_f16_f32( float16 f16, float f32 ) {
+void print_f16_f32( float16 f16, float f32, int i ) {
   float_uint hybrid; 
   hybrid.f= f32;
   unsigned int e_f16 = ( f16 & 0x7c00 ) >> 10;
@@ -168,21 +168,7 @@ void print_f16_f32( float16 f16, float f32 ) {
   unsigned int e_f32 = ( hybrid.u & 0x7f800000 ) >> 23;
   unsigned int m_f32 = ( hybrid.u & 0x007fffff );
 
-  printf( "fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
-}
-
-void print_f16_f32_v2( float16 f16, float f32, int i ) {
-  float_uint hybrid; 
-  hybrid.f= f32;
-  unsigned int e_f16 = ( f16 & 0x7c00 ) >> 10;
-  unsigned int m_f16 = ( f16 & 0x03ff );
-  unsigned int e_f32 = ( hybrid.u & 0x7f800000 ) >> 23;
-  unsigned int m_f32 = ( hybrid.u & 0x007fffff );
-
-#if 0
-  if ( e_f16 != 0 )
-#endif
-    printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
+  printf( "%i, fp: %e, fp16-hex: 0x%x, fp32-hex: 0x%x, fp16-exp: %u, fp16-mant: 0x%x, fp32-exp: %u, fp32-mant: 0x%x\n", i, f32, f16, hybrid.u, e_f16, m_f16, e_f32, m_f32 );   
 }
 
 int main( int argc, char* argv[] ) {
@@ -198,25 +184,12 @@ int main( int argc, char* argv[] ) {
   printf("\ntesting F32 -> F16 for a random scalar [0:1]\n");
   printf("using _cvtss_sh for random f32 value\n");
   x_f16 = _cvtss_sh( x_f32, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
-  print_f16_f32( x_f16, x_f32 );
+  print_f16_f32( x_f16, x_f32, 0 );
 
   printf("using f32_to_f16 for random f32 value\n");
   x_f16 = f32_to_f16( x_f32 );
-  print_f16_f32( x_f16, x_f32 );
+  print_f16_f32( x_f16, x_f32, 1 );
   printf("\n");
-
-#if 0
-  {
-    float_uint hybrid;
-    hybrid.u = 0x33000000;
-    x_f16 = _cvtss_sh( hybrid.f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
-    print_f16_f32_v2( x_f16, hybrid.f, 0 );
-    x_f16 = f32_to_f16( hybrid.f );
-    print_f16_f32_v2( x_f16, hybrid.f, 1 );
-    printf("\n");
-  }
-  return 0;
-#endif
 
   printf("testing F32 -> F16\n");
   printf("testing all 2^32-1 combinations...\n");
@@ -229,8 +202,8 @@ int main( int argc, char* argv[] ) {
     f16_a = _cvtss_sh( hybrid.f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
     f16_b = f32_to_f16( hybrid.f );
     if ( f16_a != f16_b ) {
-      print_f16_f32_v2( f16_a, hybrid.f, 0 );
-      print_f16_f32_v2( f16_b, hybrid.f, 1 );
+      print_f16_f32( f16_a, hybrid.f, 0 );
+      print_f16_f32( f16_b, hybrid.f, 1 );
 #if 0
       break;
 #endif
@@ -245,8 +218,8 @@ int main( int argc, char* argv[] ) {
     f16_a = _cvtss_sh( hybrid.f, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC );
     f16_b = f32_to_f16( hybrid.f );
     if ( f16_a != f16_b ) {
-      print_f16_f32_v2( f16_a, hybrid.f, 0 );
-      print_f16_f32_v2( f16_b, hybrid.f, 1 );
+      print_f16_f32( f16_a, hybrid.f, 0 );
+      print_f16_f32( f16_b, hybrid.f, 1 );
     }
   }
   printf("...done\n\n");
@@ -260,7 +233,8 @@ int main( int argc, char* argv[] ) {
     hybrid_a.f = _cvtsh_ss( (float16)i );;
     hybrid_b.f = f16_to_f32( (float16)i );;
     if ( hybrid_a.u != hybrid_b.u ) {
-      printf("error for input 0x%x: 0x%x vs. 0x%x\n", i, hybrid_a.u, hybrid_b.u);
+      print_f16_f32( (float16)i, hybrid_a.f, 0 );
+      print_f16_f32( (float16)i, hybrid_b.f, 1 );
     }
   }
   printf("...done\n\n");
