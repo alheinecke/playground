@@ -116,6 +116,8 @@ float16 f32_to_f16( float in ) {
     m = m_f32 | 0x00800000;
     /* addtionally subnormal shift */
     m = m >> ((f32_bias - f16_bias) + 1 - e_f32);
+    /* preserve sticky bit (some sticky bits are lost when denormalizing) */
+    m |= (((m_f32 & 0x1fff) + 0x1fff) >> 13);
     /* RNE Round */
     fixup = (m >> 13) & 0x1;
     m = m + 0x000000fff + fixup;
